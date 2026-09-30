@@ -3,13 +3,13 @@
   "group": "minecraft:misc",
   "ingredients": [
     {
-      "item": "minecraft:writable_book"
+      "item": "minecraft:book"
     },
     {
       "item": "minecraft:compass"
     }
   ],
   "result": {
-    "id": "antiqueatlas:empty_antique_atlas"
+    "item": "antiqueatlas:empty_antique_atlas"
   }
 }

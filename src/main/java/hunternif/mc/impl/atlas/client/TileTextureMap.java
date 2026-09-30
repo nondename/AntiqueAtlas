@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
@@ -84,15 +85,102 @@ public class TileTextureMap {
             return;
         }
 
-        Optional<ResourceLocation> texture_set = guessFittingTextureSet(biome);
+        Optional<ResourceLocation> textureSet = guessFittingTextureSet(biome);
 
-        if (texture_set.isPresent()) {
-            setAllTextures(id, TextureSetMap.instance().getByName(texture_set.get()));
-            Log.info("Auto-registered standard texture set for biome %s: %s", id, texture_set.get());
-        } else {
-            Log.error("Failed to auto-register a standard texture set for the biome '%s'. This is most likely caused by errors in the TextureSet configurations, check your resource packs first before reporting it as an issue!", id.toString());
-            setAllTextures(id, getDefaultTexture());
+        // 1.20.1 lost the old BiomeCategory fallback, and many modded biomes do
+        // not participate in the vanilla/Forge tags checked above. In upstream
+        // 8.0.1 this makes them fall back to the built-in `test` texture set,
+        // which is intentionally a loud debug/checkerboard texture. Try a
+        // conservative name-based fallback before giving up.
+        if (textureSet.isEmpty()) {
+            textureSet = guessFittingTextureSetById(id);
         }
+
+        // Never render an otherwise valid biome as the debug tile. An imperfect
+        // plains fallback is much more useful on a map than a diagnostic texture.
+        ResourceLocation selected = textureSet.orElse(AntiqueAtlas.id("plains"));
+        TextureSet set = TextureSetMap.instance().getByName(selected);
+
+        if (set == null) {
+            Log.warn("Texture set %s selected for biome %s is missing; falling back to plains.", selected, id);
+            selected = AntiqueAtlas.id("plains");
+            set = TextureSetMap.instance().getByName(selected);
+        }
+
+        if (set == null) {
+            // Keep the original debug fallback only for a genuinely broken
+            // resource pack where even the built-in plains set is unavailable.
+            Log.error("Failed to find a usable texture set for biome '%s'. Falling back to the debug texture.", id);
+            set = getDefaultTexture();
+        }
+
+        setAllTextures(id, set);
+        Log.info("Auto-registered standard texture set for biome %s: %s", id, selected);
+    }
+
+    /**
+     * Best-effort fallback for biomes that expose no useful vanilla/Forge tags.
+     * This is intentionally based only on the registry id so it also works with
+     * third-party biome mods without adding hard dependencies on them.
+     */
+    static Optional<ResourceLocation> guessFittingTextureSetById(ResourceLocation biomeId) {
+        String path = biomeId.getPath().toLowerCase(Locale.ROOT);
+
+        boolean cold = containsAny(path, "snow", "frozen", "ice", "icy", "glacier", "tundra", "frost");
+
+        if (containsAny(path, "ocean", "river", "lake", "water", "bay", "reef", "lagoon")) {
+            return Optional.of(AntiqueAtlas.id(cold ? "ice" : "water"));
+        }
+        if (containsAny(path, "beach", "shore", "coast")) {
+            return Optional.of(AntiqueAtlas.id("shore"));
+        }
+        if (containsAny(path, "swamp", "marsh", "bog", "mangrove", "fen")) {
+            return Optional.of(AntiqueAtlas.id("swamp"));
+        }
+        if (containsAny(path, "jungle", "rainforest", "tropical")) {
+            return Optional.of(AntiqueAtlas.id("jungle"));
+        }
+        if (containsAny(path, "savanna", "savannah")) {
+            return Optional.of(AntiqueAtlas.id("savana"));
+        }
+        if (containsAny(path, "badlands", "mesa", "canyon")) {
+            return Optional.of(AntiqueAtlas.id("plateau_mesa"));
+        }
+        if (containsAny(path, "taiga", "pine", "conifer", "spruce")) {
+            return Optional.of(AntiqueAtlas.id(cold ? "snow_pines" : "pines"));
+        }
+        if (containsAny(path, "forest", "wood", "woods", "woodland", "grove")) {
+            return Optional.of(AntiqueAtlas.id(cold ? "snow_pines" : "forest"));
+        }
+        if (containsAny(path, "desert", "dune", "arid")) {
+            return Optional.of(AntiqueAtlas.id("desert"));
+        }
+        if (containsAny(path, "mountain", "peak", "alps", "highland")) {
+            return Optional.of(AntiqueAtlas.id(cold ? "mountains_snow_caps" : "mountains"));
+        }
+        if (containsAny(path, "hill")) {
+            return Optional.of(AntiqueAtlas.id(cold ? "snow_hills" : "hills"));
+        }
+        if (containsAny(path, "mushroom", "mycel")) {
+            return Optional.of(AntiqueAtlas.id("mushroom"));
+        }
+        if (containsAny(path, "plains", "meadow", "field", "prairie", "steppe")) {
+            return Optional.of(AntiqueAtlas.id(cold ? "snow" : "plains"));
+        }
+        if (cold) {
+            return Optional.of(AntiqueAtlas.id("snow"));
+        }
+
+        return Optional.empty();
+    }
+
+    private static boolean containsAny(String value, String... needles) {
+        for (String needle : needles) {
+            if (value.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static public Optional<ResourceLocation> guessFittingTextureSet(ResourceKey<Biome> biome) {
@@ -119,7 +207,7 @@ public class TileTextureMap {
             return Optional.of(AntiqueAtlas.id("water"));
         }
 
-		if (biomeTag.is(BiomeTags.IS_BEACH)/* || biomeTag.is(Tags.Biomes.IS_BEACH)*/) {
+        if (biomeTag.is(BiomeTags.IS_BEACH)/* || biomeTag.is(Tags.Biomes.IS_BEACH)*/) {
             return Optional.of(AntiqueAtlas.id("shore"));
         }
 
@@ -147,20 +235,20 @@ public class TileTextureMap {
                     return Optional.of(AntiqueAtlas.id("snow_pines"));
                 }
             } else {
-            	if (biomeTag.is(Tags.Biomes.IS_CONIFEROUS/*_TREE*/)) {
+                if (biomeTag.is(Tags.Biomes.IS_CONIFEROUS/*_TREE*/)) {
                     if (biomeTag.is(BiomeTags.IS_HILL)) {
                         return Optional.of(AntiqueAtlas.id("pines_hills"));
                     } else {
                         return Optional.of(AntiqueAtlas.id("pines"));
                     }
-            	}
-            	else {
+                }
+                else {
                     if (biomeTag.is(BiomeTags.IS_HILL)) {
                         return Optional.of(AntiqueAtlas.id("forest_hills"));
                     } else {
                         return Optional.of(AntiqueAtlas.id("forest"));
                     }
-            	}
+                }
             }
         }
 
@@ -206,7 +294,7 @@ public class TileTextureMap {
 //            return Optional.of(AntiqueAtlas.id("hills"));
 //        }
 
-		if (biomeTag.is(Tags.Biomes.IS_MOUNTAIN)/* || biomeTag.is(Tags.Biomes.IS_MOUNTAIN_SLOPE)*/) {
+        if (biomeTag.is(Tags.Biomes.IS_MOUNTAIN)/* || biomeTag.is(Tags.Biomes.IS_MOUNTAIN_SLOPE)*/) {
             return Optional.of(AntiqueAtlas.id("mountains"));
         }
 
@@ -214,7 +302,7 @@ public class TileTextureMap {
 //            return Optional.of(AntiqueAtlas.id("mountains_snow_caps"));
 //        }
 
-		if (biomeTag.is(BiomeTags.IS_END)/* || biomeTag.is(Tags.Biomes.IS_OUTER_END_ISLAND)*/) {
+        if (biomeTag.is(BiomeTags.IS_END)/* || biomeTag.is(Tags.Biomes.IS_OUTER_END_ISLAND)*/) {
             if (biomeTag.is(Tags.Biomes.IS_DENSE_END) || biomeTag.is(Tags.Biomes.IS_SPARSE_END)) {
                 return Optional.of(AntiqueAtlas.id("end_island_plants"));
             } else {
@@ -283,7 +371,7 @@ public class TileTextureMap {
 //            }
 //        };
 
-		return Optional.ofNullable(/* texture_set */null);
+        return Optional.ofNullable(/* texture_set */null);
     }
 
     public boolean isRegistered(ResourceLocation id) {

@@ -29,7 +29,19 @@ public abstract class ATexture implements ITexture {
     public ATexture(ResourceLocation texture, boolean autobind) {
         this.texture = texture;
         this.autobind = autobind;
-        this.LAYER = RenderType.text(texture);
+
+        /*
+         * drawWithLight() is used for the atlas rendered in first person.
+         * RenderType.text() is a translucent text pipeline, which shader mods
+         * (Iris/Oculus) can process differently from normal held-item textures.
+         * That caused the atlas' semi-transparent pixels to blend with the
+         * world behind it and made the map look see-through.
+         *
+         * The atlas is effectively a stack of textured cutout quads, so use
+         * the entity cutout pipeline here instead. GUI rendering below still
+         * uses GuiGraphics.blit() and is intentionally left unchanged.
+         */
+        this.LAYER = RenderType.entityCutoutNoCull(texture);
     }
 
     public ResourceLocation getTexture() {
